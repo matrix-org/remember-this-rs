@@ -45,3 +45,12 @@ async fn main() {
     }
 }
 ```
+
+# A few notes and features
+
+- Individual caches can have a format version number. This way, if your data format has changed in subtle ways, by increasing the version number, you can be sure that you're not going to read "wrong" data from the disk.
+- The storage format is flexbuffers on sled. This gives us a degree of dynamic typing while we load from disk, which decreases the chances of your application accidentally reading from an incorrect version of your format.
+
+# TODO
+
+- For the moment, the on-disk LRU is not updated when data is fetched from memory.
