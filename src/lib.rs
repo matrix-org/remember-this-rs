@@ -4,7 +4,6 @@ extern crate flexbuffers;
 #[macro_use]
 extern crate log;
 extern crate serde;
-extern crate serde_derive;
 extern crate tokio;
 #[macro_use]
 extern crate typed_builder;
