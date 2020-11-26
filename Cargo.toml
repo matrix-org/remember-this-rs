@@ -16,3 +16,6 @@ serde_derive = "1.0"
 sled = "0.34"
 tokio = { version = "0.3", features = ["full"] }
 typed-builder = "0.7"
+
+[dev-dependencies]
+env_logger = "*"

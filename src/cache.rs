@@ -33,7 +33,15 @@ where
     K: Send + Clone + Hash + Eq + for<'de> serde::Deserialize<'de> + serde::Serialize,
     V: Send + Clone + for<'de> serde::Deserialize<'de> + serde::Serialize,
 {
-    pub async fn get<F, E>(&self, key: &K, thunk: F) -> Result<Arc<V>, Error<E>>
+    pub async fn get_or_insert_infallible<F>(&self, key: &K, thunk: F) -> Result<Arc<V>, Error<()>>
+    where
+        F: std::future::Future<Output = V>
+
+    {
+        self.get_or_insert::<_, ()>(key, async { Ok(thunk.await) }).await
+    }
+
+    pub async fn get_or_insert<F, E>(&self, key: &K, thunk: F) -> Result<Arc<V>, Error<E>>
     where
         F: std::future::Future<Output = Result<V, E>>,
     {

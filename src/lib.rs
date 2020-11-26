@@ -14,13 +14,5 @@ mod manager;
 mod result;
 
 pub use cache::Cache;
-pub use manager::CacheManager;
+pub use manager::{CacheManager, ManagerOptions, CacheOptions};
 pub use result::Error;
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}

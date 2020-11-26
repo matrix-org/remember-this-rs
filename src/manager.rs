@@ -9,9 +9,9 @@ pub use crate::Cache;
 
 const TREE_META: &[u8] = b":meta:";
 const KEY_FORMAT: &[u8] = b"format";
-const KEY_VERSION: &[u8] = b"version";
+const KEY_FORMAT_VERSION: &[u8] = b"version";
 const VALUE_FORMAT: &[u8] = b"disk-cache";
-const VALUE_VERSION: &[u8] = &[0, 1, 0];
+const VALUE_FORMAT_VERSION: &[u8] = &[0, 1, 0];
 
 /// An object managing several caches.
 pub struct CacheManager {
@@ -45,18 +45,26 @@ impl CacheManager {
             .map(|format| format == VALUE_FORMAT)
             .unwrap_or(false);
         let is_correct_version = meta_tree
-            .get(KEY_VERSION)?
-            .map(|version| version == VALUE_VERSION)
+            .get(KEY_FORMAT_VERSION)?
+            .map(|version| version == VALUE_FORMAT_VERSION)
             .unwrap_or(false);
+
+        debug!(target: "disk-cache", "is_correct_format: {}", is_correct_format);
+        debug!(target: "disk-cache", "is_correct_version: {}", is_correct_version);
 
         if !is_correct_format || !is_correct_version {
             for tree in db.tree_names() {
-                db.drop_tree(tree)?;
+                debug!(target: "disk-cache", "dropping tree: {:?}", tree);
+                db.drop_tree(tree)
+                    .or_else(|e| match e {
+                        sled::Error::Unsupported(_) => /* Attempting to remove a core structure, skip */ Ok(false),
+                        other => Err(other)
+                    })?;
             }
         }
         let meta_tree = db.open_tree(":meta:")?;
         meta_tree.insert(KEY_FORMAT, VALUE_FORMAT)?;
-        meta_tree.insert(KEY_VERSION, VALUE_VERSION)?;
+        meta_tree.insert(KEY_FORMAT_VERSION, VALUE_FORMAT_VERSION)?;
 
         Ok(CacheManager { db })
     }
@@ -84,9 +92,14 @@ impl CacheManager {
             + 'static,
         V: Send + Clone + for<'de> serde::Deserialize<'de> + serde::Serialize + Sync + 'static,
     {
+        let key = Self::get_cache_name(name);
+        if options.purge {
+            self.db.drop_tree(&key)?;
+        }
+
         let in_memory: Arc<RwLock<HashMap<K, CacheEntry<V>>>> =
             Arc::new(RwLock::new(HashMap::new()));
-        let tree = self.db.open_tree(Self::get_cache_name(name))?;
+        let tree = self.db.open_tree(key)?;
 
         // Setup interval cleanup.
         let initial_cleanup_start = tokio::time::Instant::now() + tokio::time::Duration::from_secs(options.initial_disk_cleanup_after.num_seconds() as u64);
@@ -119,6 +132,7 @@ impl CacheManager {
 #[derive(TypedBuilder)]
 pub struct ManagerOptions {
     /// The path where the cache should be stored.
+    #[builder(setter(into))]
     path: std::path::PathBuf,
 
     /// If `true`, use compression.
@@ -138,4 +152,19 @@ pub struct CacheOptions {
     /// If unspecified, 10 seconds.
     #[builder(default=Duration::seconds(10))]
     initial_disk_cleanup_after: Duration,
+
+    /// If `true`, erase the cache without attempting to reload it.
+    ///
+    /// Used mostly for testing.
+    #[builder(default = false)]
+    purge: bool,
+}
+impl Default for CacheOptions {
+    fn default() -> Self {
+        CacheOptions {
+            duration: Duration::days(1),
+            initial_disk_cleanup_after: Duration::seconds(10),
+            purge: false,
+        }
+    }
 }
