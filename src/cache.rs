@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::{Arc, RwLock};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use chrono::{DateTime, Duration, Utc};
 use flexbuffers::{FlexbufferSerializer, Reader};
@@ -12,8 +13,10 @@ pub use crate::result::Error;
 pub struct CacheEntry<V> {
     pub value: Arc<V>,
 
+    /// A number of seconds since the epoch
+    ///
     /// This value may be removed after `expiration`.
-    pub expiration: DateTime<Utc>,
+    pub expiration: AtomicU64,
 }
 
 /// Persisting queried values to the disk across sessions.
@@ -55,15 +58,17 @@ where
     where
         F: std::future::Future<Output = Result<V, E>>,
     {
+        let expiration = Utc::now() + self.duration;
         {
             // Fetch from in-memory cache.
             let read_lock = self.in_memory.read().unwrap();
             if let Some(found) = read_lock.get(key) {
+                found.expiration.store(expiration.timestamp() as u64, Ordering::Relaxed);
+                // FIXME: Postpone expiry on disk.
                 return Ok(found.value.clone());
             }
         }
         debug!(target: "disk-cache", "Value was NOT in memory cache");
-        let expiration = Utc::now() + self.duration;
 
         // Prepare binary key for disk cache access.
         let mut key_serializer = FlexbufferSerializer::new();
@@ -81,6 +86,8 @@ where
 
                     // Store back in memory.
                     self.store_in_memory_cache(key, &result, expiration);
+
+                    // FIXME: Postpone expiration on disk
 
                     // Finally, return.
                     return Ok(result);
@@ -113,7 +120,7 @@ where
         let mut write_lock = self.in_memory.write().unwrap();
         let entry = CacheEntry {
             value: value.clone(),
-            expiration,
+            expiration: AtomicU64::new(expiration.timestamp() as u64),
         };
         write_lock.insert(key.clone(), entry);
     }
@@ -145,10 +152,10 @@ pub fn cleanup_memory_cache<K, V>(memory_cache: &Arc<RwLock<HashMap<K, CacheEntr
 where
     K: Eq + Hash + Clone,
 {
-    let now = Utc::now();
+    let now = Utc::now().timestamp() as u64;
     {
         let mut write_lock = memory_cache.write().unwrap();
-        write_lock.retain(|_, v| v.expiration > now)
+        write_lock.retain(|_, v| v.expiration.load(Ordering::Relaxed) > now)
     }
 }
 
