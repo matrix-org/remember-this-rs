@@ -83,6 +83,9 @@ impl CacheManager {
         format!("meta:{}", name)
     }
 
+    fn get_expiry_name(name: &str) -> String {
+        format!("expiry:{}", name)
+    }
 
     /// Remove a cache.
     pub fn purge(&self, name: &str) -> sled::Result<bool> {
@@ -104,9 +107,11 @@ impl CacheManager {
             + 'static,
         V: Send + Clone + for<'de> serde::Deserialize<'de> + serde::Serialize + Sync + 'static,
     {
-        // Managing metadata.
-        let key = Self::get_cache_name(name);
+        let content_key = Self::get_cache_name(name);
         let meta_key = Self::get_meta_name(name);
+        let expiry_key = Self::get_expiry_name(name);
+
+        // Check whether we need to purge the cache.
         let version = [(options.version & 0xFF) as u8, ((options.version >> 8) & 0xFF) as u8, ((options.version >> 16) & 0xFF) as u8, ((options.version >> 24) & 0xFF) as u8];
         let format_changed = self.db.open_tree(&meta_key)?
             .get(KEY_FORMAT_VERSION)?
@@ -118,7 +123,8 @@ impl CacheManager {
 
         if format_changed || options.purge {
             debug!(target: "disk-cache", "We need to cleanup this cache - format_changed:{} options.purge:{}", format_changed, options.purge);
-            self.db.drop_tree(&key)?;
+            self.db.drop_tree(&content_key)?;
+            self.db.drop_tree(&expiry_key)?;
         }
         self.db.open_tree(meta_key)?
             .insert(KEY_FORMAT_VERSION, &version)?;
@@ -126,35 +132,43 @@ impl CacheManager {
         // Now actually open data.
         let in_memory: Arc<RwLock<HashMap<K, CacheEntry<V>>>> =
             Arc::new(RwLock::new(HashMap::new()));
-        let tree = self.db.open_tree(key)?;
+        let content = self.db.open_tree(content_key)?;
+        let expiry = self.db.open_tree(expiry_key)?;
 
         // Setup interval cleanup.
-        let initial_cleanup_start = tokio::time::Instant::now()
-            + tokio::time::Duration::from_secs(
-                options.initial_disk_cleanup_after.num_seconds() as u64
-            );
-        let cleanup_duration =
-            tokio::time::Duration::from_secs(options.duration.num_seconds() as u64);
-        let cleanup_memory = in_memory.clone();
-        let mut cleanup_tree = tree.clone();
+        {
+            let start = tokio::time::Instant::now()
+                + tokio::time::Duration::from_secs(
+                    options.initial_disk_cleanup_after.num_seconds() as u64
+                );
+            let duration = tokio::time::Duration::from_secs(options.duration.num_seconds() as u64);
+            let in_memory = in_memory.clone();
+            let expiry = expiry.clone();
+            let content = content.clone();
 
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval_at(initial_cleanup_start, cleanup_duration);
-            loop {
-                let _ = interval.tick().await;
-                cache::cleanup_disk_cache::<K, V>(&mut cleanup_tree);
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval_at(start, duration);
+                loop {
+                    let _ = interval.tick().await;
+                    cache::cleanup_disk_cache::<K, V>(&expiry, &content);
 
-                if Arc::strong_count(&cleanup_memory) == 1 {
-                    // We're the last owner, time to stop.
-                    return;
+                    if Arc::strong_count(&in_memory) == 1 {
+                        // We're the last owner, time to stop.
+                        return;
+                    }
+
+                    // Cleanup in-memory
+                    cache::cleanup_memory_cache(&in_memory);
                 }
+            });
+        }
 
-                // Cleanup in-memory
-                cache::cleanup_memory_cache(&cleanup_memory);
-            }
-        });
-
-        Ok(cache::cache(in_memory, tree, options.duration))
+        Ok(cache::Cache {
+            in_memory,
+            content,
+            expiry,
+            duration: options.duration
+        })
     }
 }
 

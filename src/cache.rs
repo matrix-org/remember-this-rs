@@ -4,13 +4,11 @@ use std::sync::{Arc, RwLock};
 
 use chrono::{DateTime, Duration, Utc};
 use flexbuffers::{FlexbufferSerializer, Reader};
-use serde::{Deserialize, Serialize};
-use serde_derive::{Deserialize, Serialize};
+use serde::{Serialize};
 
 pub use crate::result::Error;
 
 /// An entry stored to disk.
-#[derive(Deserialize, Serialize)]
 pub struct CacheEntry<V> {
     pub value: Arc<V>,
 
@@ -24,9 +22,15 @@ where
     K: Send + Clone + Hash + Eq + for<'de> serde::Deserialize<'de> + serde::Serialize,
     V: Send + Clone + for<'de> serde::Deserialize<'de> + serde::Serialize,
 {
-    in_memory: Arc<RwLock<HashMap<K, CacheEntry<V>>>>,
-    tree: sled::Tree,
-    duration: Duration,
+    pub (crate) in_memory: Arc<RwLock<HashMap<K, CacheEntry<V>>>>,
+
+    /// The data cached to the disk as a K -> V mapping.
+    pub (crate) content: sled::Tree,
+
+    /// The expiration dates as a seconds: u64 -> K mapping
+    pub (crate) expiry: sled::Tree,
+
+    pub (crate) duration: Duration,
 }
 impl<K, V> Cache<K, V>
 where
@@ -68,12 +72,12 @@ where
 
         {
             // Fetch from disk cache.
-            if let Some(value_bin) = self.tree.get(&key_bin).map_err(Error::Database)? {
+            if let Some(value_bin) = self.content.get(&key_bin).map_err(Error::Database)? {
                 debug!(target: "disk-cache", "Value was in disk cache");
                 // Found in cache.
                 let reader = Reader::get_root(&value_bin).unwrap();
-                if let Ok(entry) = CacheEntry::<V>::deserialize(reader) {
-                    let result = entry.value;
+                if let Ok(value) = V::deserialize(reader) {
+                    let result = Arc::new(value);
 
                     // Store back in memory.
                     self.store_in_memory_cache(key, &result, expiration);
@@ -124,37 +128,17 @@ where
         expiration: DateTime<Utc>,
     ) -> Result<(), sled::Error> {
         debug!(target: "disk-", "Adding value to disk cache");
-        let entry = CacheEntry {
-            value: value.clone(),
-            expiration,
-        };
         let mut value_serializer = FlexbufferSerializer::new();
-        entry.serialize(&mut value_serializer).unwrap();
+        value.serialize(&mut value_serializer).unwrap();
         let entry_bin = value_serializer.take_buffer();
 
-        self.tree.insert(key, entry_bin)?;
+        self.content.insert(key, entry_bin)?;
+        self.expiry.insert(u64_to_bytes(expiration.timestamp() as u64), key)?;
         Ok(())
     }
 }
 
 // Internal functions.
-
-/// Constructor for `Cache`.
-pub fn cache<K, V>(
-    in_memory: Arc<RwLock<HashMap<K, CacheEntry<V>>>>,
-    tree: sled::Tree,
-    duration: Duration,
-) -> Cache<K, V>
-where
-    K: Send + Clone + Hash + Eq + for<'de> serde::Deserialize<'de> + serde::Serialize,
-    V: Send + Clone + for<'de> serde::Deserialize<'de> + serde::Serialize,
-{
-    Cache {
-        in_memory,
-        tree,
-        duration,
-    }
-}
 
 /// Remove all values from memory that have nothing to do here anymore.
 pub fn cleanup_memory_cache<K, V>(memory_cache: &Arc<RwLock<HashMap<K, CacheEntry<V>>>>)
@@ -169,7 +153,7 @@ where
 }
 
 /// Remove all values from disk cache that have nothing to do here anymore.
-pub fn cleanup_disk_cache<K, V>(disk_cache: &mut sled::Tree)
+pub fn cleanup_disk_cache<K, V>(expiry: &sled::Tree, content: &sled::Tree)
 where
     K: Send
         + Clone
@@ -178,20 +162,50 @@ where
         + for<'de> serde::Deserialize<'de>
         + serde::Serialize
         + Sync
-        + 'static,
-    V: Send + Clone + for<'de> serde::Deserialize<'de> + serde::Serialize + Sync + 'static,
+        + 'static
 {
     let now = Utc::now();
     let mut batch = sled::Batch::default();
-    for cursor in disk_cache.iter() {
-        let (k, v) = cursor.unwrap();
-
-        let reader = Reader::get_root(&v).unwrap();
-        let entry = CacheEntry::<V>::deserialize(reader).unwrap(); // We assume that in-memory deserialization always succeeds.
-                                                                   // In the future, we may have to be more cautious, in case of e.g. disk corruption.
-        if entry.expiration <= now {
+    for cursor in expiry.iter() {
+        let (ts, k) = cursor.unwrap();
+        let timestamp = bytes_to_u64(&ts);
+        if now.timestamp() as u64 >= timestamp {
             batch.remove(k);
         }
     }
-    disk_cache.apply_batch(batch).unwrap(); // FIXME: Handle erros
+    content.apply_batch(batch).unwrap(); // FIXME: Handle erros
+}
+
+fn bytes_to_u64(bytes: &[u8]) -> u64 {
+    bytes[0] as u64
+        + ((bytes[1] as u64) << 8)
+        + ((bytes[2] as u64) << 16)
+        + ((bytes[3] as u64) << 24)
+        + ((bytes[4] as u64) << 32)
+        + ((bytes[5] as u64) << 40)
+        + ((bytes[6] as u64) << 48)
+        + ((bytes[7] as u64) << 56)
+ }
+
+fn u64_to_bytes(value: u64) -> [u8; 8] {
+    [(value % 256) as u8,
+     ((value >> 8)  & 0b11111111) as u8,
+     ((value >> 16) & 0b11111111) as u8,
+     ((value >> 24) & 0b11111111) as u8,
+     ((value >> 32) & 0b11111111) as u8,
+     ((value >> 40) & 0b11111111) as u8,
+     ((value >> 48) & 0b11111111) as u8,
+     ((value >> 56) & 0b11111111) as u8,
+    ]
+}
+
+#[test]
+fn test_bytes_to_u64() {
+    let mut i: u128 = 0;
+    while i <= std::u64::MAX as u128 {
+        let bytes = u64_to_bytes(i as u64);
+        let num = bytes_to_u64(&bytes);
+        assert_eq!(num, i as u64);
+        i = (i + 1) * 7;
+    }
 }
