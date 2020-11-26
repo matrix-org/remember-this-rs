@@ -26,7 +26,8 @@ impl CacheManager {
             .path(&options.path)
             .mode(sled::Mode::HighThroughput)
             .flush_every_ms(Some(10_000))
-            .use_compression(options.use_compression);
+            .use_compression(options.use_compression)
+            .temporary(options.use_temporary);
         let db = match config.open() {
             Ok(db) => db,
             Err(sled::Error::Corruption { .. }) => {
@@ -55,11 +56,14 @@ impl CacheManager {
         if !is_correct_format || !is_correct_version {
             for tree in db.tree_names() {
                 debug!(target: "disk-cache", "dropping tree: {:?}", tree);
-                db.drop_tree(tree)
-                    .or_else(|e| match e {
-                        sled::Error::Unsupported(_) => /* Attempting to remove a core structure, skip */ Ok(false),
-                        other => Err(other)
-                    })?;
+                db.drop_tree(tree).or_else(|e| match e {
+                    sled::Error::Unsupported(_) =>
+                    /* Attempting to remove a core structure, skip */
+                    {
+                        Ok(false)
+                    }
+                    other => Err(other),
+                })?;
             }
         }
         let meta_tree = db.open_tree(":meta:")?;
@@ -102,7 +106,10 @@ impl CacheManager {
         let tree = self.db.open_tree(key)?;
 
         // Setup interval cleanup.
-        let initial_cleanup_start = tokio::time::Instant::now() + tokio::time::Duration::from_secs(options.initial_disk_cleanup_after.num_seconds() as u64);
+        let initial_cleanup_start = tokio::time::Instant::now()
+            + tokio::time::Duration::from_secs(
+                options.initial_disk_cleanup_after.num_seconds() as u64
+            );
         let cleanup_duration =
             tokio::time::Duration::from_secs(options.duration.num_seconds() as u64);
         let cleanup_memory = in_memory.clone();
@@ -138,8 +145,16 @@ pub struct ManagerOptions {
     /// If `true`, use compression.
     ///
     /// By default, false.
-    #[builder(default=false)]
+    #[builder(default = false)]
     use_compression: bool,
+
+    /// If `true`, drop database once the `CacheManager` is dropped.
+    ///
+    /// Useful mostly for testing.
+    ///
+    /// By default, false.
+    #[builder(default = false)]
+    use_temporary: bool,
 }
 
 #[derive(TypedBuilder)]

@@ -33,14 +33,20 @@ where
     K: Send + Clone + Hash + Eq + for<'de> serde::Deserialize<'de> + serde::Serialize,
     V: Send + Clone + for<'de> serde::Deserialize<'de> + serde::Serialize,
 {
+    /// Get a value from the cache.
+    ///
+    /// If this value is not in the cache, compute the thunk and insert the value.
     pub async fn get_or_insert_infallible<F>(&self, key: &K, thunk: F) -> Result<Arc<V>, Error<()>>
     where
-        F: std::future::Future<Output = V>
-
+        F: std::future::Future<Output = V>,
     {
-        self.get_or_insert::<_, ()>(key, async { Ok(thunk.await) }).await
+        self.get_or_insert::<_, ()>(key, async { Ok(thunk.await) })
+            .await
     }
 
+    /// Get a value from the cache.
+    ///
+    /// If this value is not in the cache, compute the thunk and insert the value.
     pub async fn get_or_insert<F, E>(&self, key: &K, thunk: F) -> Result<Arc<V>, Error<E>>
     where
         F: std::future::Future<Output = Result<V, E>>,
@@ -66,15 +72,18 @@ where
                 debug!(target: "disk-cache", "Value was in disk cache");
                 // Found in cache.
                 let reader = Reader::get_root(&value_bin).unwrap();
-                let entry = CacheEntry::<V>::deserialize(reader).unwrap(); // We assume that in-memory deserialization always succeeds.
-                                                                           // In the future, we may have to be more cautious, in case of e.g. disk corruption.
-                let result = entry.value;
+                if let Ok(entry) = CacheEntry::<V>::deserialize(reader) {
+                    let result = entry.value;
 
-                // Store back in memory.
-                self.store_in_memory_cache(key, &result, expiration);
+                    // Store back in memory.
+                    self.store_in_memory_cache(key, &result, expiration);
 
-                // Finally, return.
-                return Ok(result);
+                    // Finally, return.
+                    return Ok(result);
+                }
+
+                // If we reach this stage, deserialization failed, either because of disk corruption (unlikely)
+                // or because the format has changed (more likely). In either case, ignore and overwrite data.
             }
         }
 
@@ -130,6 +139,7 @@ where
 
 // Internal functions.
 
+/// Constructor for `Cache`.
 pub fn cache<K, V>(
     in_memory: Arc<RwLock<HashMap<K, CacheEntry<V>>>>,
     tree: sled::Tree,

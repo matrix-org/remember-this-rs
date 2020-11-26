@@ -14,5 +14,5 @@ mod manager;
 mod result;
 
 pub use cache::Cache;
-pub use manager::{CacheManager, ManagerOptions, CacheOptions};
+pub use manager::{CacheManager, CacheOptions, ManagerOptions};
 pub use result::Error;
