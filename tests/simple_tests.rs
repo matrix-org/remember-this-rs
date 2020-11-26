@@ -2,6 +2,8 @@ extern crate env_logger;
 
 use disk_cache::*;
 use std::sync::atomic::Ordering;
+
+/// Test that we can fill the cache and recover data
 #[tokio::test]
 async fn test_simple() {
     let _ = env_logger::builder().is_test(true).try_init();
@@ -15,6 +17,13 @@ async fn test_simple() {
                 .build(),
         )
         .unwrap();
+
+    // Cache is initially empty.
+    for i in 0..100 {
+        let obtained = cache.get(&i)
+            .unwrap();
+        assert!(obtained.is_none(), "Cache should initially be empty");
+    }
 
     // Fill the cache.
     for i in 0..100 {
@@ -59,6 +68,8 @@ async fn test_simple() {
                 false,
                 "The cache should not be evaluating when there is data already."
             );
+
+            assert_eq!(cache.get(&i).unwrap().unwrap(), obtained);
         }
     }
 }
@@ -155,6 +166,7 @@ async fn test_reopen() {
         CacheManager::new(&ManagerOptions::builder().path("/tmp/test_reopen.db").use_temporary(true).build()).unwrap();
 
     async fn walk_through_cache(manager: &CacheManager, options: &CacheOptions, should_execute: bool, subtest: &str) {
+        eprintln!("Starting test {}", subtest);
         let cache = manager
             .cache(
                 "cache_1",
@@ -164,6 +176,7 @@ async fn test_reopen() {
 
         // Fill the cache.
         for i in 0..100 {
+            eprintln!("{}:{}", subtest, i);
             let was_evaluated = std::sync::atomic::AtomicBool::new(false);
             let obtained = cache
                 .get_or_insert_infallible(&i, async {

@@ -198,12 +198,18 @@ pub struct ManagerOptions {
 #[derive(TypedBuilder)]
 pub struct CacheOptions {
     /// How long data should stay in memory.
+    /// 
+    /// Note that this duration is approximative. The caches will run cleanup
+    /// tasks once in a while to remove data from the cache.
     ///
     /// If unspecified, 1h.
     #[builder(default=Duration::hours(1))]
     memory_duration: Duration,
 
     /// How long data should stay on disk.
+    /// 
+    /// Note that this duration is approximative. The caches will run cleanup
+    /// tasks once in a while to remove data from the cache.
     ///
     /// If unspecified, 1day.
     #[builder(default=Duration::days(1))]
