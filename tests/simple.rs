@@ -150,3 +150,73 @@ async fn test_format_change() {
         }
     }
 }
+
+
+/// Test that we can reload by reopening the cache.
+#[tokio::test]
+async fn test_reopen() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let manager =
+        CacheManager::new(&ManagerOptions::builder().path("/tmp/test_reopen.db").use_temporary(true).build()).unwrap();
+
+    async fn walk_through_cache(manager: &CacheManager, options: &CacheOptions, should_execute: bool, subtest: &str) {
+        let cache = manager
+            .cache(
+                "cache_1",
+                &options,
+            )
+            .unwrap();
+
+        // Fill the cache.
+        for i in 0..100 {
+            let was_evaluated = std::sync::atomic::AtomicBool::new(false);
+            let obtained = cache
+                .get_or_insert_infallible(&i, async {
+                    let _ = was_evaluated.store(true, Ordering::SeqCst);
+                    i * i
+                })
+                .await
+                .unwrap();
+            assert_eq!(
+                *obtained,
+                i * i,
+                "The cache should return the right value: {}.", subtest
+            );
+            assert_eq!(
+                was_evaluated.load(Ordering::SeqCst),
+                should_execute,
+                "The cache should be evaluating: {}.",
+                subtest
+            );
+        }
+    }
+
+    // Initialize cache.
+    walk_through_cache(&manager, &CacheOptions::builder()
+        .purge(true)
+        .duration(Duration::hours(1))
+        .build(), true, "initializer").await;
+    walk_through_cache(&manager, &CacheOptions::builder()
+        .duration(Duration::hours(1))
+        .build(), false, "simple reopen").await;
+
+    // Purge the cache.
+    walk_through_cache(&manager, &CacheOptions::builder()
+        .duration(Duration::hours(1))
+        .purge(true)
+        .build(), true, "purge").await;
+    walk_through_cache(&manager, &CacheOptions::builder()
+        .duration(Duration::hours(1))
+        .build(), false, "reopen 2").await;
+
+    // Change version number.
+    walk_through_cache(&manager, &CacheOptions::builder()
+        .duration(Duration::hours(1))
+        .version(1)
+        .build(), true, "change version number").await;
+    walk_through_cache(&manager, &CacheOptions::builder()
+        .duration(Duration::hours(1))
+        .version(1)
+        .build(), false, "reopen with new version").await;
+
+}

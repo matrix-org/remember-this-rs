@@ -73,14 +73,22 @@ impl CacheManager {
         Ok(CacheManager { db })
     }
 
-    /// Compute cache name
+    /// Return the internal name of the tree representing this cache.
     fn get_cache_name(name: &str) -> String {
         format!("cache:{}", name)
     }
 
+    /// Return the internal name of the tree representing metadata for this cache.
+    fn get_meta_name(name: &str) -> String {
+        format!("meta:{}", name)
+    }
+
+
     /// Remove a cache.
     pub fn purge(&self, name: &str) -> sled::Result<bool> {
-        self.db.drop_tree(Self::get_cache_name(name))
+        let cache = self.db.drop_tree(Self::get_cache_name(name))?;
+        let meta = self.db.drop_tree(Self::get_meta_name(name))?;
+        Ok(cache || meta)
     }
 
     /// Instantiate a new cache for a specific type.
@@ -96,11 +104,26 @@ impl CacheManager {
             + 'static,
         V: Send + Clone + for<'de> serde::Deserialize<'de> + serde::Serialize + Sync + 'static,
     {
+        // Managing metadata.
         let key = Self::get_cache_name(name);
-        if options.purge {
+        let meta_key = Self::get_meta_name(name);
+        let version = [(options.version & 0xFF) as u8, ((options.version >> 8) & 0xFF) as u8, ((options.version >> 16) & 0xFF) as u8, ((options.version >> 24) & 0xFF) as u8];
+        let format_changed = self.db.open_tree(&meta_key)?
+            .get(KEY_FORMAT_VERSION)?
+            .map(|k| {
+                debug!(target: "disk-cache", "Cache version: {:?}, expected {:?}", k.as_ref(), version);
+                k.as_ref() != version
+            })
+            .unwrap_or(true);
+
+        if format_changed || options.purge {
+            debug!(target: "disk-cache", "We need to cleanup this cache - format_changed:{} options.purge:{}", format_changed, options.purge);
             self.db.drop_tree(&key)?;
         }
+        self.db.open_tree(meta_key)?
+            .insert(KEY_FORMAT_VERSION, &version)?;
 
+        // Now actually open data.
         let in_memory: Arc<RwLock<HashMap<K, CacheEntry<V>>>> =
             Arc::new(RwLock::new(HashMap::new()));
         let tree = self.db.open_tree(key)?;
@@ -173,6 +196,11 @@ pub struct CacheOptions {
     /// Used mostly for testing.
     #[builder(default = false)]
     purge: bool,
+
+    /// Increment this if you have changed the format of the cache and wish
+    /// to erase its contents.
+    #[builder(default = 0)]
+    version: u32,
 }
 impl Default for CacheOptions {
     fn default() -> Self {
@@ -180,6 +208,7 @@ impl Default for CacheOptions {
             duration: Duration::days(1),
             initial_disk_cleanup_after: Duration::seconds(10),
             purge: false,
+            version: 0,
         }
     }
 }
