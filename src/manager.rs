@@ -141,7 +141,7 @@ impl CacheManager {
                 + tokio::time::Duration::from_secs(
                     options.initial_disk_cleanup_after.num_seconds() as u64
                 );
-            let duration = tokio::time::Duration::from_secs(options.duration.num_seconds() as u64);
+            let duration = tokio::time::Duration::from_secs(options.memory_duration.num_seconds() as u64);
             let in_memory = in_memory.clone();
             let expiry = expiry.clone();
             let content = content.clone();
@@ -167,7 +167,8 @@ impl CacheManager {
             in_memory,
             content,
             expiry,
-            duration: options.duration
+            memory_duration: options.memory_duration,
+            disk_duration: options.disk_duration,
         })
     }
 }
@@ -196,8 +197,17 @@ pub struct ManagerOptions {
 
 #[derive(TypedBuilder)]
 pub struct CacheOptions {
-    /// How long data should stay on disk/in memory.
-    duration: Duration,
+    /// How long data should stay in memory.
+    ///
+    /// If unspecified, 1h.
+    #[builder(default=Duration::hours(1))]
+    memory_duration: Duration,
+
+    /// How long data should stay on disk.
+    ///
+    /// If unspecified, 1day.
+    #[builder(default=Duration::days(1))]
+    disk_duration: Duration,
 
     /// How long to wait before cleaning up data that is already on disk.
     ///
@@ -218,11 +228,6 @@ pub struct CacheOptions {
 }
 impl Default for CacheOptions {
     fn default() -> Self {
-        CacheOptions {
-            duration: Duration::days(1),
-            initial_disk_cleanup_after: Duration::seconds(10),
-            purge: false,
-            version: 0,
-        }
+        CacheOptions::builder().build()
     }
 }

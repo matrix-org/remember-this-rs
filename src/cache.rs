@@ -30,10 +30,14 @@ where
     /// The data cached to the disk as a K -> V mapping.
     pub (crate) content: sled::Tree,
 
-    /// The expiration dates as a seconds: u64 -> K mapping
+    /// The expiration dates as a seconds: u64 -> K mapping.
     pub (crate) expiry: sled::Tree,
 
-    pub (crate) duration: Duration,
+    /// How long data should remain in-memory.
+    pub (crate) memory_duration: Duration,
+
+    /// How long data should remain on-disk.
+    pub (crate) disk_duration: Duration,
 }
 impl<K, V> Cache<K, V>
 where
@@ -58,12 +62,12 @@ where
     where
         F: std::future::Future<Output = Result<V, E>>,
     {
-        let expiration = Utc::now() + self.duration;
+        let memory_expiration = Utc::now() + self.memory_duration;
         {
             // Fetch from in-memory cache.
             let read_lock = self.in_memory.read().unwrap();
             if let Some(found) = read_lock.get(key) {
-                found.expiration.store(expiration.timestamp() as u64, Ordering::Relaxed);
+                found.expiration.store(memory_expiration.timestamp() as u64, Ordering::Relaxed);
                 // FIXME: Postpone expiry on disk.
                 return Ok(found.value.clone());
             }
@@ -85,7 +89,7 @@ where
                     let result = Arc::new(value);
 
                     // Store back in memory.
-                    self.store_in_memory_cache(key, &result, expiration);
+                    self.store_in_memory_cache(key, &result, memory_expiration);
 
                     // FIXME: Postpone expiration on disk
 
@@ -103,10 +107,12 @@ where
         let result = Arc::new(data);
 
         // Store in memory.
-        self.store_in_memory_cache(key, &result, expiration);
+        self.store_in_memory_cache(key, &result, memory_expiration);
+
+        let disk_expiration = Utc::now() + self.disk_duration;
 
         // Store in cache.
-        self.store_in_disk_cache(&key_bin, &result, expiration)
+        self.store_in_disk_cache(&key_bin, &result, disk_expiration)
             .map_err(Error::Database)?;
 
         Ok(result)

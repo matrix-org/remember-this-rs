@@ -1,6 +1,5 @@
 extern crate env_logger;
 
-use chrono::Duration;
 use disk_cache::*;
 use std::sync::atomic::Ordering;
 #[tokio::test]
@@ -13,7 +12,6 @@ async fn test_simple() {
             "cache_1",
             &CacheOptions::builder()
                 .purge(true)
-                .duration(Duration::hours(1))
                 .build(),
         )
         .unwrap();
@@ -80,7 +78,6 @@ async fn test_format_change() {
                 "cache_2",
                 &CacheOptions::builder()
                     .purge(true)
-                    .duration(Duration::hours(1))
                     .build(),
             )
             .unwrap();
@@ -103,7 +100,6 @@ async fn test_format_change() {
                 "cache_2",
                 &CacheOptions::builder()
                     .purge(true)
-                    .duration(Duration::hours(1))
                     .build(),
             )
             .unwrap();
@@ -130,7 +126,6 @@ async fn test_format_change() {
                 "cache_2",
                 &CacheOptions::builder()
                     .purge(true)
-                    .duration(Duration::hours(1))
                     .build(),
             )
             .unwrap();
@@ -194,29 +189,23 @@ async fn test_reopen() {
     // Initialize cache.
     walk_through_cache(&manager, &CacheOptions::builder()
         .purge(true)
-        .duration(Duration::hours(1))
         .build(), true, "initializer").await;
     walk_through_cache(&manager, &CacheOptions::builder()
-        .duration(Duration::hours(1))
         .build(), false, "simple reopen").await;
 
     // Purge the cache.
     walk_through_cache(&manager, &CacheOptions::builder()
-        .duration(Duration::hours(1))
         .purge(true)
         .build(), true, "purge").await;
     walk_through_cache(&manager, &CacheOptions::builder()
-        .duration(Duration::hours(1))
         .build(), false, "reopen 2").await;
 
     // Change version number.
     walk_through_cache(&manager, &CacheOptions::builder()
-        .duration(Duration::hours(1))
         .version(1)
         .build(), true, "change version number").await;
     walk_through_cache(&manager, &CacheOptions::builder()
-        .duration(Duration::hours(1))
         .version(1)
-        .build(), false, "reopen with new version").await;
+        .build(), false, "reopen with same new version").await;
 
 }
