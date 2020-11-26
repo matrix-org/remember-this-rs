@@ -3,7 +3,9 @@ name = "disk-cache"
 version = "0.1.0"
 authors = ["David Teller <davidt@element.io>"]
 edition = "2018"
-description = "A simple mechanism for caching data to both memory and disk. Relies on `tokio`."
+description = "A simple mechanism for caching data to both memory and disk. Uses `tokio`."
+license = "Apache-2.0"
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -17,5 +19,9 @@ sled = "0.34"
 tokio = { version = "0.3", features = ["full"] }
 typed-builder = "0.7"
 
+[build-dependencies]
+skeptic = "0.13"
+
 [dev-dependencies]
 env_logger = "*"
+skeptic = "0.13"
