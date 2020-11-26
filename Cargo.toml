@@ -1,0 +1,18 @@
+[package]
+name = "disk-cache"
+version = "0.1.0"
+authors = ["David Teller <davidt@element.io>"]
+edition = "2018"
+description = "A simple mechanism for caching data to both memory and disk. Relies on `tokio`."
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+flexbuffers = "0.2"
+log = "0.4"
+serde = { version = "1.0", features = ["rc"] }
+serde_derive = "1.0"
+sled = "0.34"
+tokio = { version = "0.3", features = ["full"] }
+typed-builder = "0.7"
