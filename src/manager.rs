@@ -89,18 +89,17 @@ impl CacheManager {
         let tree = self.db.open_tree(Self::get_cache_name(name))?;
 
         // Setup interval cleanup.
+        let initial_cleanup_start = tokio::time::Instant::now() + tokio::time::Duration::from_secs(options.initial_disk_cleanup_after.num_seconds() as u64);
         let cleanup_duration =
             tokio::time::Duration::from_secs(options.duration.num_seconds() as u64);
         let cleanup_memory = in_memory.clone();
         let mut cleanup_tree = tree.clone();
 
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(cleanup_duration);
+            let mut interval = tokio::time::interval_at(initial_cleanup_start, cleanup_duration);
             loop {
-                // Immediately cleanup disk cache.
-                cache::cleanup_disk_cache::<K, V>(&mut cleanup_tree);
-
                 let _ = interval.tick().await;
+                cache::cleanup_disk_cache::<K, V>(&mut cleanup_tree);
 
                 if Arc::strong_count(&cleanup_memory) == 1 {
                     // We're the last owner, time to stop.
@@ -123,6 +122,9 @@ pub struct ManagerOptions {
     path: std::path::PathBuf,
 
     /// If `true`, use compression.
+    ///
+    /// By default, false.
+    #[builder(default=false)]
     use_compression: bool,
 }
 
@@ -130,4 +132,10 @@ pub struct ManagerOptions {
 pub struct CacheOptions {
     /// How long data should stay on disk/in memory.
     duration: Duration,
+
+    /// How long to wait before cleaning up data that is already on disk.
+    ///
+    /// If unspecified, 10 seconds.
+    #[builder(default=Duration::seconds(10))]
+    initial_disk_cleanup_after: Duration,
 }
