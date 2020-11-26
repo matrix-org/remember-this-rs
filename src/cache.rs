@@ -18,7 +18,6 @@ pub struct CacheEntry<V> {
     pub expiration: DateTime<Utc>,
 }
 
-
 /// Persisting queried values to the disk across sessions.
 pub struct Cache<K, V>
 where
@@ -72,8 +71,7 @@ where
         }
 
         // Not in cache. Unthunk `thunk`
-        let data = thunk.await
-            .map_err(Error::Client)?;
+        let data = thunk.await.map_err(Error::Client)?;
         let result = Arc::new(data);
 
         // Store in memory.
@@ -117,16 +115,18 @@ where
         entry.serialize(&mut value_serializer).unwrap();
         let entry_bin = value_serializer.take_buffer();
 
-        self.tree
-            .insert(key, entry_bin)?;
+        self.tree.insert(key, entry_bin)?;
         Ok(())
     }
 }
 
 // Internal functions.
 
-
-pub fn cache<K, V>(in_memory: Arc<RwLock<HashMap<K, CacheEntry<V>>>>, tree: sled::Tree, duration: Duration) -> Cache<K, V>
+pub fn cache<K, V>(
+    in_memory: Arc<RwLock<HashMap<K, CacheEntry<V>>>>,
+    tree: sled::Tree,
+    duration: Duration,
+) -> Cache<K, V>
 where
     K: Send + Clone + Hash + Eq + for<'de> serde::Deserialize<'de> + serde::Serialize,
     V: Send + Clone + for<'de> serde::Deserialize<'de> + serde::Serialize,
@@ -134,10 +134,9 @@ where
     Cache {
         in_memory,
         tree,
-        duration
+        duration,
     }
 }
-
 
 /// Remove all values from memory that have nothing to do here anymore.
 pub fn cleanup_memory_cache<K, V>(memory_cache: &Arc<RwLock<HashMap<K, CacheEntry<V>>>>)
@@ -171,10 +170,10 @@ where
 
         let reader = Reader::get_root(&v).unwrap();
         let entry = CacheEntry::<V>::deserialize(reader).unwrap(); // We assume that in-memory deserialization always succeeds.
-                                                                    // In the future, we may have to be more cautious, in case of e.g. disk corruption.
+                                                                   // In the future, we may have to be more cautious, in case of e.g. disk corruption.
         if entry.expiration <= now {
             batch.remove(k);
         }
     }
     disk_cache.apply_batch(batch).unwrap(); // FIXME: Handle erros
-}    
+}
