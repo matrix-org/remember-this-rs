@@ -54,3 +54,4 @@ async fn main() {
 # TODO
 
 - For the moment, the on-disk LRU is not updated when data is fetched from memory.
+- For the moment, the in-memory LRU is not size-limited.
