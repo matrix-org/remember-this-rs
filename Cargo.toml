@@ -1,11 +1,14 @@
 [package]
-name = "disk-cache"
+name = "remember-this"
 version = "0.1.0"
 authors = ["David Teller <davidt@element.io>"]
 edition = "2018"
 description = "A simple mechanism for caching data to both memory and disk. Uses `tokio`."
 license = "Apache-2.0"
 readme = "README.md"
+keywords = ["cache", "disk", "lru", "tokio"]
+categories = ["caching"]
+repository = "https://github.com/matrix-org/disk-cache-rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -22,5 +25,5 @@ typed-builder = "0.7"
 skeptic = "0.13"
 
 [dev-dependencies]
-env_logger = "*"
+env_logger = "0.8"
 skeptic = "0.13"
