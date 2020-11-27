@@ -1,3 +1,7 @@
+![https://api.travis-ci.org/matrix-org/remember-this-rs.svg?branch=master]
+![https://img.shields.io/crates/v/remember-this.svg]
+![https://docs.rs/remember-this]
+
 # A simple cache-to-disk mechanism
 
 This crate provides a simple, zero-configuration, mechanism for caching data both in-memory and to disk.
