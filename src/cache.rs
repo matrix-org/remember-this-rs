@@ -118,16 +118,16 @@ where
                 return Ok(Some(found.value.clone()));
             }
         }
-        debug!(target: "disk-cache", "Value not found in memory");
+        debug!(target: "remember-this", "Value not found in memory");
 
         {
             // Fetch from disk cache.
             if let Some(value_bin) = self.content.get(&key_bin).map_err(Error::Database)? {
-                debug!(target: "disk-cache", "Value was in disk cache");
+                debug!(target: "remember-this", "Value was in disk cache");
                 // Found in cache.
                 let reader = Reader::get_root(&value_bin).unwrap();
                 if let Ok(value) = V::deserialize(reader) {
-                    debug!(target: "disk-cache", "Value deserialized");
+                    debug!(target: "remember-this", "Value deserialized");
 
                     let result = Arc::new(value);
 
@@ -145,7 +145,7 @@ where
             }
         }
 
-        debug!(target: "disk-cache", "Value not found on disk");
+        debug!(target: "remember-this", "Value not found on disk");
         Ok(None)
     }
 
@@ -153,7 +153,7 @@ where
     ///
     /// Schedule a task to cleanup from memory.
     fn store_in_memory_cache(&self, key: &K, value: &Arc<V>, expiration: DateTime<Utc>) {
-        debug!(target: "disk-cache", "Adding value to memory cache");
+        debug!(target: "remember-this", "Adding value to memory cache");
         let mut write_lock = self.in_memory.write().unwrap();
         let entry = CacheEntry {
             value: value.clone(),
