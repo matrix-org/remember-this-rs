@@ -1,27 +1,26 @@
 extern crate env_logger;
 
-use disk_cache::*;
+use remember_this::*;
 use std::sync::atomic::Ordering;
 
 /// Test that we can fill the cache and recover data
 #[tokio::test]
 async fn test_simple() {
     let _ = env_logger::builder().is_test(true).try_init();
-    let manager =
-        CacheManager::new(&ManagerOptions::builder().path("/tmp/test_simple.db").use_temporary(true).build()).unwrap();
+    let manager = CacheManager::new(
+        &CacheManagerOptions::builder()
+            .path("/tmp/test_simple.db")
+            .use_temporary(true)
+            .build(),
+    )
+    .unwrap();
     let cache = manager
-        .cache(
-            "cache_1",
-            &CacheOptions::builder()
-                .purge(true)
-                .build(),
-        )
+        .cache("cache_1", &CacheOptions::builder().purge(true).build())
         .unwrap();
 
     // Cache is initially empty.
     for i in 0..100 {
-        let obtained = cache.get(&i)
-            .unwrap();
+        let obtained = cache.get(&i).unwrap();
         assert!(obtained.is_none(), "Cache should initially be empty");
     }
 
@@ -74,31 +73,28 @@ async fn test_simple() {
     }
 }
 
-
 /// Test that we erase data silently in case of format change.
 #[tokio::test]
 async fn test_format_change() {
     let _ = env_logger::builder().is_test(true).try_init();
-    let manager =
-        CacheManager::new(&ManagerOptions::builder().path("/tmp/test_format_change.db").use_temporary(true).build()).unwrap();
+    let manager = CacheManager::new(
+        &CacheManagerOptions::builder()
+            .path("/tmp/test_format_change.db")
+            .use_temporary(true)
+            .build(),
+    )
+    .unwrap();
 
     {
         // Open the cache as `<i32, i32>`.
         let cache = manager
-            .cache(
-                "cache_2",
-                &CacheOptions::builder()
-                    .purge(true)
-                    .build(),
-            )
+            .cache("cache_2", &CacheOptions::builder().purge(true).build())
             .unwrap();
 
         // Fill the cache.
         for i in 0..100 {
             cache
-                .get_or_insert_infallible(&i, async {
-                    i * i
-                })
+                .get_or_insert_infallible(&i, async { i * i })
                 .await
                 .unwrap();
         }
@@ -107,12 +103,7 @@ async fn test_format_change() {
     {
         // Reopen the cache as `<i32, String>`
         let cache = manager
-            .cache(
-                "cache_2",
-                &CacheOptions::builder()
-                    .purge(true)
-                    .build(),
-            )
+            .cache("cache_2", &CacheOptions::builder().purge(true).build())
             .unwrap();
 
         // Re-access data
@@ -125,20 +116,23 @@ async fn test_format_change() {
                 })
                 .await
                 .unwrap();
-            assert_eq!(*found, format!("{}", i * i), "When silently overwriting because of format change, we get the right result");
-            assert_eq!(was_evaluated.load(Ordering::SeqCst), true, "When silently overwriting because of format change, we executed the thunk");
+            assert_eq!(
+                *found,
+                format!("{}", i * i),
+                "When silently overwriting because of format change, we get the right result"
+            );
+            assert_eq!(
+                was_evaluated.load(Ordering::SeqCst),
+                true,
+                "When silently overwriting because of format change, we executed the thunk"
+            );
         }
     }
 
     {
         // Reopen the cache as `<String, bool>`
         let cache = manager
-            .cache(
-                "cache_2",
-                &CacheOptions::builder()
-                    .purge(true)
-                    .build(),
-            )
+            .cache("cache_2", &CacheOptions::builder().purge(true).build())
             .unwrap();
 
         // Fill the cache.
@@ -151,28 +145,40 @@ async fn test_format_change() {
                 })
                 .await
                 .unwrap();
-            assert_eq!(*found, i % 2 == 0, "When silently overwriting because of format change, we get the right result");
-            assert_eq!(was_evaluated.load(Ordering::SeqCst), true, "When silently overwriting because of format change, we executed the thunk");    
+            assert_eq!(
+                *found,
+                i % 2 == 0,
+                "When silently overwriting because of format change, we get the right result"
+            );
+            assert_eq!(
+                was_evaluated.load(Ordering::SeqCst),
+                true,
+                "When silently overwriting because of format change, we executed the thunk"
+            );
         }
     }
 }
-
 
 /// Test that we can reload by reopening the cache.
 #[tokio::test]
 async fn test_reopen() {
     let _ = env_logger::builder().is_test(true).try_init();
-    let manager =
-        CacheManager::new(&ManagerOptions::builder().path("/tmp/test_reopen.db").use_temporary(true).build()).unwrap();
+    let manager = CacheManager::new(
+        &CacheManagerOptions::builder()
+            .path("/tmp/test_reopen.db")
+            .use_temporary(true)
+            .build(),
+    )
+    .unwrap();
 
-    async fn walk_through_cache(manager: &CacheManager, options: &CacheOptions, should_execute: bool, subtest: &str) {
+    async fn walk_through_cache(
+        manager: &CacheManager,
+        options: &CacheOptions,
+        should_execute: bool,
+        subtest: &str,
+    ) {
         eprintln!("Starting test {}", subtest);
-        let cache = manager
-            .cache(
-                "cache_1",
-                &options,
-            )
-            .unwrap();
+        let cache = manager.cache("cache_1", &options).unwrap();
 
         // Fill the cache.
         for i in 0..100 {
@@ -188,7 +194,8 @@ async fn test_reopen() {
             assert_eq!(
                 *obtained,
                 i * i,
-                "The cache should return the right value: {}.", subtest
+                "The cache should return the right value: {}.",
+                subtest
             );
             assert_eq!(
                 was_evaluated.load(Ordering::SeqCst),
@@ -200,25 +207,50 @@ async fn test_reopen() {
     }
 
     // Initialize cache.
-    walk_through_cache(&manager, &CacheOptions::builder()
-        .purge(true)
-        .build(), true, "initializer").await;
-    walk_through_cache(&manager, &CacheOptions::builder()
-        .build(), false, "simple reopen").await;
+    walk_through_cache(
+        &manager,
+        &CacheOptions::builder().purge(true).build(),
+        true,
+        "initializer",
+    )
+    .await;
+    walk_through_cache(
+        &manager,
+        &CacheOptions::builder().build(),
+        false,
+        "simple reopen",
+    )
+    .await;
 
     // Purge the cache.
-    walk_through_cache(&manager, &CacheOptions::builder()
-        .purge(true)
-        .build(), true, "purge").await;
-    walk_through_cache(&manager, &CacheOptions::builder()
-        .build(), false, "reopen 2").await;
+    walk_through_cache(
+        &manager,
+        &CacheOptions::builder().purge(true).build(),
+        true,
+        "purge",
+    )
+    .await;
+    walk_through_cache(
+        &manager,
+        &CacheOptions::builder().build(),
+        false,
+        "reopen 2",
+    )
+    .await;
 
     // Change version number.
-    walk_through_cache(&manager, &CacheOptions::builder()
-        .version(1)
-        .build(), true, "change version number").await;
-    walk_through_cache(&manager, &CacheOptions::builder()
-        .version(1)
-        .build(), false, "reopen with same new version").await;
-
+    walk_through_cache(
+        &manager,
+        &CacheOptions::builder().version(1).build(),
+        true,
+        "change version number",
+    )
+    .await;
+    walk_through_cache(
+        &manager,
+        &CacheOptions::builder().version(1).build(),
+        false,
+        "reopen with same new version",
+    )
+    .await;
 }
