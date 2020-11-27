@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::hash::Hash;
-use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, RwLock};
 
 use chrono::{DateTime, Duration, Utc};
 use flexbuffers::{FlexbufferSerializer, Reader};
-use serde::{Serialize};
+use serde::Serialize;
 
 pub use crate::result::Error;
 
@@ -25,19 +25,19 @@ where
     K: Send + Clone + Hash + Eq + for<'de> serde::Deserialize<'de> + serde::Serialize,
     V: Send + Clone + for<'de> serde::Deserialize<'de> + serde::Serialize,
 {
-    pub (crate) in_memory: Arc<RwLock<HashMap<K, CacheEntry<V>>>>,
+    pub(crate) in_memory: Arc<RwLock<HashMap<K, CacheEntry<V>>>>,
 
     /// The data cached to the disk as a K -> V mapping.
-    pub (crate) content: sled::Tree,
+    pub(crate) content: sled::Tree,
 
     /// The expiration dates as a seconds: u64 -> K mapping.
-    pub (crate) expiry: sled::Tree,
+    pub(crate) expiry: sled::Tree,
 
     /// How long data should remain in-memory.
-    pub (crate) memory_duration: Duration,
+    pub(crate) memory_duration: Duration,
 
     /// How long data should remain on-disk.
-    pub (crate) disk_duration: Duration,
+    pub(crate) disk_duration: Duration,
 }
 impl<K, V> Cache<K, V>
 where
@@ -71,9 +71,9 @@ where
 
         match self.get_at(key, &key_bin, memory_expiration) {
             Ok(Some(found)) => return Ok(found),
-            Ok(None) => {},
+            Ok(None) => {}
             Err(Error::Database(err)) => return Err(Error::Database(err)),
-            Err(e) => panic!("We shouldn't have any other error here {:?}", e)
+            Err(e) => panic!("We shouldn't have any other error here {:?}", e),
         }
 
         // Not in cache. Unthunk `thunk`
@@ -93,8 +93,7 @@ where
     }
 
     /// Get a value from the cache.
-    pub fn get(&self, key: &K) -> Result<Option<Arc<V>>, Error<()>>
-    {
+    pub fn get(&self, key: &K) -> Result<Option<Arc<V>>, Error<()>> {
         // Prepare binary key for disk cache access.
         let mut key_serializer = FlexbufferSerializer::new();
         key.serialize(&mut key_serializer).unwrap(); // We assume that in-memory serialization always succeeds.
@@ -102,13 +101,19 @@ where
 
         self.get_at(key, &key_bin, Utc::now() + self.memory_duration)
     }
-    fn get_at(&self, key: &K, key_bin: &[u8], memory_expiration: DateTime<Utc>) -> Result<Option<Arc<V>>, Error<()>>
-    {
+    fn get_at(
+        &self,
+        key: &K,
+        key_bin: &[u8],
+        memory_expiration: DateTime<Utc>,
+    ) -> Result<Option<Arc<V>>, Error<()>> {
         {
             // Fetch from in-memory cache.
             let read_lock = self.in_memory.read().unwrap();
             if let Some(found) = read_lock.get(key) {
-                found.expiration.store(memory_expiration.timestamp() as u64, Ordering::Relaxed);
+                found
+                    .expiration
+                    .store(memory_expiration.timestamp() as u64, Ordering::Relaxed);
                 // FIXME: Postpone expiry on disk.
                 return Ok(Some(found.value.clone()));
             }
@@ -172,7 +177,8 @@ where
         let entry_bin = value_serializer.take_buffer();
 
         self.content.insert(key, entry_bin)?;
-        self.expiry.insert(u64_to_bytes(expiration.timestamp() as u64), key)?;
+        self.expiry
+            .insert(u64_to_bytes(expiration.timestamp() as u64), key)?;
         Ok(())
     }
 
@@ -202,16 +208,11 @@ where
 /// Remove all values from disk cache that have nothing to do here anymore.
 pub fn cleanup_disk_cache<K, V>(expiry: &sled::Tree, content: &sled::Tree)
 where
-    K: Send
-        + Clone
-        + Hash
-        + Eq
-        + for<'de> serde::Deserialize<'de>
-        + serde::Serialize
+    K: Send + Clone + Hash + Eq + for<'de> serde::Deserialize<'de> + serde::Serialize,
 {
     let now = Utc::now();
     let mut batch = sled::Batch::default();
-    for cursor in expiry.range(u64_to_bytes(0) .. u64_to_bytes(now.timestamp() as u64)) {
+    for cursor in expiry.range(u64_to_bytes(0)..u64_to_bytes(now.timestamp() as u64)) {
         let (ts, k) = cursor.unwrap(); // FIXME: Handle errors
         debug_assert!(bytes_to_u64(&ts) <= now.timestamp() as u64);
         batch.remove(k);
@@ -220,25 +221,26 @@ where
 }
 
 fn bytes_to_u64(bytes: &[u8]) -> u64 {
-      ((bytes[0] as u64) << 56)
-    + ((bytes[1] as u64) << 48)
-    + ((bytes[2] as u64) << 40)
-    + ((bytes[3] as u64) << 32)
-    + ((bytes[4] as u64) << 24)
-    + ((bytes[5] as u64) << 16)
-    + ((bytes[6] as u64) << 8)
-    + bytes[7] as u64
-}    
+    ((bytes[0] as u64) << 56)
+        + ((bytes[1] as u64) << 48)
+        + ((bytes[2] as u64) << 40)
+        + ((bytes[3] as u64) << 32)
+        + ((bytes[4] as u64) << 24)
+        + ((bytes[5] as u64) << 16)
+        + ((bytes[6] as u64) << 8)
+        + bytes[7] as u64
+}
 
 fn u64_to_bytes(value: u64) -> [u8; 8] {
-    [((value >> 56) & 0b11111111) as u8,
-     ((value >> 48) & 0b11111111) as u8,
-     ((value >> 40) & 0b11111111) as u8,
-     ((value >> 32) & 0b11111111) as u8,
-     ((value >> 24) & 0b11111111) as u8,
-     ((value >> 16) & 0b11111111) as u8,
-     ((value >> 8)  & 0b11111111) as u8,
-     (value % 256) as u8,
+    [
+        ((value >> 56) & 0b11111111) as u8,
+        ((value >> 48) & 0b11111111) as u8,
+        ((value >> 40) & 0b11111111) as u8,
+        ((value >> 32) & 0b11111111) as u8,
+        ((value >> 24) & 0b11111111) as u8,
+        ((value >> 16) & 0b11111111) as u8,
+        ((value >> 8) & 0b11111111) as u8,
+        (value % 256) as u8,
     ]
 }
 

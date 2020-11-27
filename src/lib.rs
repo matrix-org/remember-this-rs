@@ -1,4 +1,5 @@
-//! An in-memory cache backed by an on-disk cache.
+//! A simple tool designed to allow our code to remember results on disk.
+
 extern crate chrono;
 extern crate flexbuffers;
 #[macro_use]
@@ -13,5 +14,5 @@ mod manager;
 mod result;
 
 pub use cache::Cache;
-pub use manager::{CacheManager, CacheOptions, ManagerOptions};
+pub use manager::{CacheManager, CacheManagerOptions, CacheOptions};
 pub use result::Error;

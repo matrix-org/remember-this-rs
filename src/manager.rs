@@ -20,7 +20,7 @@ pub struct CacheManager {
 }
 impl CacheManager {
     /// Create a new cache manager.
-    pub fn new(options: &ManagerOptions) -> Result<Self, sled::Error> {
+    pub fn new(options: &CacheManagerOptions) -> Result<Self, sled::Error> {
         // Attempt to open the cache database.
         let config = sled::Config::default()
             .path(&options.path)
@@ -112,7 +112,12 @@ impl CacheManager {
         let expiry_key = Self::get_expiry_name(name);
 
         // Check whether we need to purge the cache.
-        let version = [(options.version & 0xFF) as u8, ((options.version >> 8) & 0xFF) as u8, ((options.version >> 16) & 0xFF) as u8, ((options.version >> 24) & 0xFF) as u8];
+        let version = [
+            (options.version & 0xFF) as u8,
+            ((options.version >> 8) & 0xFF) as u8,
+            ((options.version >> 16) & 0xFF) as u8,
+            ((options.version >> 24) & 0xFF) as u8,
+        ];
         let format_changed = self.db.open_tree(&meta_key)?
             .get(KEY_FORMAT_VERSION)?
             .map(|k| {
@@ -126,7 +131,8 @@ impl CacheManager {
             self.db.drop_tree(&content_key)?;
             self.db.drop_tree(&expiry_key)?;
         }
-        self.db.open_tree(meta_key)?
+        self.db
+            .open_tree(meta_key)?
             .insert(KEY_FORMAT_VERSION, &version)?;
 
         // Now actually open data.
@@ -139,9 +145,10 @@ impl CacheManager {
         {
             let start = tokio::time::Instant::now()
                 + tokio::time::Duration::from_secs(
-                    options.initial_disk_cleanup_after.num_seconds() as u64
+                    options.initial_disk_cleanup_after.num_seconds() as u64,
                 );
-            let duration = tokio::time::Duration::from_secs(options.memory_duration.num_seconds() as u64);
+            let duration =
+                tokio::time::Duration::from_secs(options.memory_duration.num_seconds() as u64);
             let in_memory = in_memory.clone();
             let expiry = expiry.clone();
             let content = content.clone();
@@ -175,7 +182,7 @@ impl CacheManager {
 
 /// Options for the CacheManager.
 #[derive(TypedBuilder)]
-pub struct ManagerOptions {
+pub struct CacheManagerOptions {
     /// The path where the cache should be stored.
     #[builder(setter(into))]
     path: std::path::PathBuf,
@@ -198,7 +205,7 @@ pub struct ManagerOptions {
 #[derive(TypedBuilder)]
 pub struct CacheOptions {
     /// How long data should stay in memory.
-    /// 
+    ///
     /// Note that this duration is approximative. The caches will run cleanup
     /// tasks once in a while to remove data from the cache.
     ///
@@ -207,7 +214,7 @@ pub struct CacheOptions {
     memory_duration: Duration,
 
     /// How long data should stay on disk.
-    /// 
+    ///
     /// Note that this duration is approximative. The caches will run cleanup
     /// tasks once in a while to remove data from the cache.
     ///
