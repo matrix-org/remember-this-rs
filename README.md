@@ -7,16 +7,16 @@ A typical usecase is an application that needs to deal with long-running queries
 # Example
 
 ```rust
-extern crate disk_cache;
+extern crate remember_this;
 #[macro_use]
 extern crate tokio;
 
-use disk_cache::*;
+use remember_this::*;
 
 #[tokio::main]
 async fn main() {
     // A cache manager lets us organize several strongly-typed caches.
-    let manager_options = ManagerOptions::builder()
+    let manager_options = CacheManagerOptions::builder()
         .path("/tmp/test_reopen.db")
         .build();
     let manager = CacheManager::new(&manager_options).unwrap();
