@@ -10,7 +10,7 @@ pub use crate::Cache;
 const TREE_META: &[u8] = b":meta:";
 const KEY_FORMAT: &[u8] = b"format";
 const KEY_FORMAT_VERSION: &[u8] = b"version";
-const VALUE_FORMAT: &[u8] = b"disk-cache";
+const VALUE_FORMAT: &[u8] = b"remember-this";
 const VALUE_FORMAT_VERSION: &[u8] = &[0, 1, 0];
 
 /// An object managing several caches.
@@ -31,7 +31,7 @@ impl CacheManager {
         let db = match config.open() {
             Ok(db) => db,
             Err(sled::Error::Corruption { .. }) => {
-                warn!(target: "disk-cache", "Cache file corrupted, recreating");
+                warn!(target: "remember-this", "Cache file corrupted, recreating");
                 // Erase database and reopen.
                 let _ = std::fs::remove_dir_all(&options.path);
                 config.create_new(true).open()?
@@ -50,12 +50,12 @@ impl CacheManager {
             .map(|version| version == VALUE_FORMAT_VERSION)
             .unwrap_or(false);
 
-        debug!(target: "disk-cache", "is_correct_format: {}", is_correct_format);
-        debug!(target: "disk-cache", "is_correct_version: {}", is_correct_version);
+        debug!(target: "remember-this", "is_correct_format: {}", is_correct_format);
+        debug!(target: "remember-this", "is_correct_version: {}", is_correct_version);
 
         if !is_correct_format || !is_correct_version {
             for tree in db.tree_names() {
-                debug!(target: "disk-cache", "dropping tree: {:?}", tree);
+                debug!(target: "remember-this", "dropping tree: {:?}", tree);
                 db.drop_tree(tree).or_else(|e| match e {
                     sled::Error::Unsupported(_) =>
                     /* Attempting to remove a core structure, skip */
@@ -121,13 +121,13 @@ impl CacheManager {
         let format_changed = self.db.open_tree(&meta_key)?
             .get(KEY_FORMAT_VERSION)?
             .map(|k| {
-                debug!(target: "disk-cache", "Cache version: {:?}, expected {:?}", k.as_ref(), version);
+                debug!(target: "remember-this", "Cache version: {:?}, expected {:?}", k.as_ref(), version);
                 k.as_ref() != version
             })
             .unwrap_or(true);
 
         if format_changed || options.purge {
-            debug!(target: "disk-cache", "We need to cleanup this cache - format_changed:{} options.purge:{}", format_changed, options.purge);
+            debug!(target: "remember-this", "We need to cleanup this cache - format_changed:{} options.purge:{}", format_changed, options.purge);
             self.db.drop_tree(&content_key)?;
             self.db.drop_tree(&expiry_key)?;
         }
